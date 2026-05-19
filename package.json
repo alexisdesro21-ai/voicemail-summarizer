@@ -1,0 +1,24 @@
+{
+  "name": "voicemail-summarizer",
+  "version": "1.0.0",
+  "description": "Résumé automatique de boîte vocale via Twilio + Claude + SendGrid",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "@sendgrid/mail": "^8.1.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.19.0",
+    "node-fetch": "^2.7.0",
+    "twilio": "^5.2.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
