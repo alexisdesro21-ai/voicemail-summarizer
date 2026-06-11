@@ -1,4 +1,3 @@
-// Add this at the top after dotenv
 const requiredEnvVars = ["ANTHROPIC_API_KEY", "RESEND_API_KEY", "SENDER_EMAIL", "RECIPIENT_EMAIL"];
 const missing = requiredEnvVars.filter(v => !process.env[v]);
 if (missing.length > 0) {
