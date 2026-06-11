@@ -21,7 +21,7 @@ app.post("/voicemail/incoming", (req, res) => {
     maxLength: 120,
     timeout: 5,
     transcribe: true,
-    transcribeCallback: "/voicemail/transcribed",
+    transcribeCallback: "https://voicemail-summarizer.onrender.com/voicemail/transcribed",
     playBeep: true,
   });
   twiml.say({ language: "fr-CA", voice: "Polly.Gabrielle" }, "Je n'ai pas reçu de message. Au revoir.");
