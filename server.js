@@ -14,13 +14,13 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 app.post("/voicemail/incoming", (req, res) => {
   console.log("📞 Appel entrant de :", req.body.From);
   const twiml = new twilio.twiml.VoiceResponse();
-  twiml.say({ language: "fr-CA", voice: "Polly.Gabrielle" }, "Bonjour, vous êtes bien sur laboîte vocale d'Alexis Desrosiers, spécialiste hypothécaire pour la Banque TD. Veuillez laisser votre message après le timbre sonnore.");
-  twiml.record({
+  
     action: "/voicemail/recorded",
     method: "POST",
     maxLength: 120,
     timeout: 5,
     transcribe: true,
+    twiml.say({ language: "fr-CA" }, "Bonjour, vous avez bien rejoint la boîte vocale d'Alexis Desrosiers, spécialiste hypothécaire pour la Banque TD. Merci de laisser votre message après le bip.");
     transcribeCallback: "https://voicemail-summarizer.onrender.com/voicemail/transcribed",
     playBeep: true,
   });
