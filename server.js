@@ -2,7 +2,6 @@ const express = require("express");
 const twilio = require("twilio");
 const { Resend } = require("resend");
 const Anthropic = require("@anthropic-ai/sdk");
-const fetch = require("node-fetch");
 require("dotenv").config();
 
 const app = express();
@@ -15,65 +14,73 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 app.post("/voicemail/incoming", (req, res) => {
   console.log("📞 Appel entrant de :", req.body.From);
   const twiml = new twilio.twiml.VoiceResponse();
-  twiml.say({ language: "fr-CA", voice: "Polly.Gabrielle" }, "Bonjour, vous êtes bien sur la boîte vocale d'Alexis Desrosiers, Spécialiste Hypothécaire pour la Banque TD. Veuillez laisser votre message après le timbre sonnore.");
-  twiml.record({ action: "/voicemail/recorded", method: "POST", maxLength: 120, timeout: 5, transcribe: false, playBeep: true });
-  twiml.say({ language: "fr-CA" }, "Je n'ai pas reçu de message. Au revoir.");
-  res.type("text/xml");
-  res.send(twiml.toString());
-});
-
-app.post("/voicemail/recorded", async (req, res) => {
-  const { RecordingUrl, From, CallDuration, RecordingSid } = req.body;
-  console.log(`🎙️ Message reçu de ${From} (${CallDuration}s)`);
-  const twiml = new twilio.twiml.VoiceResponse();
-  twiml.say({ language: "fr-CA" }, "Votre message a bien été enregistré. Merci et bonne journée.");
-  res.type("text/xml");
-  res.send(twiml.toString());
-  processVoicemail({ RecordingUrl, From, CallDuration, RecordingSid }).catch((err) => {
-    console.error("❌ Erreur traitement:", err.message);
+  twiml.say({ language: "fr-CA", voice: "Polly.Gabrielle" }, "Bonjour, vous êtes bien connecté à la boîte vocale. Veuillez laisser votre message après le bip.");
+  twiml.record({
+    action: "/voicemail/recorded",
+    method: "POST",
+    maxLength: 120,
+    timeout: 5,
+    transcribe: true,
+    transcribeCallback: "/voicemail/transcribed",
+    playBeep: true,
   });
+  twiml.say({ language: "fr-CA", voice: "Polly.Gabrielle" }, "Je n'ai pas reçu de message. Au revoir.");
+  res.type("text/xml");
+  res.send(twiml.toString());
 });
 
-async function processVoicemail({ RecordingUrl, From, CallDuration, RecordingSid }) {
-  console.log("⬇️  Téléchargement de l'audio...");
-  const audioUrl = `${RecordingUrl}.mp3`;
-  const authHeader = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
-  const audioResp = await fetch(audioUrl, { headers: { Authorization: `Basic ${authHeader}` } });
-  if (!audioResp.ok) throw new Error(`Audio non récupérable: ${audioResp.status}`);
-  const audioBuffer = await audioResp.buffer();
-  const audioBase64 = audioBuffer.toString("base64");
+app.post("/voicemail/recorded", (req, res) => {
+  console.log(`🎙️ Message enregistré de ${req.body.From} (${req.body.CallDuration}s)`);
+  const twiml = new twilio.twiml.VoiceResponse();
+  twiml.say({ language: "fr-CA", voice: "Polly.Gabrielle" }, "Votre message a bien été enregistré. Merci et bonne journée.");
+  res.type("text/xml");
+  res.send(twiml.toString());
+});
 
-  console.log("🤖 Analyse par Claude...");
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 1000,
-    system: `Tu es un assistant qui analyse des messages de boîte vocale. Retourne UNIQUEMENT un JSON valide (sans backticks) :
+app.post("/voicemail/transcribed", async (req, res) => {
+  res.sendStatus(200);
+  const { TranscriptionText, From, RecordingUrl, RecordingSid } = req.body;
+  console.log(`📝 Transcription reçue de ${From}: ${TranscriptionText}`);
+
+  if (!TranscriptionText) {
+    console.log("⚠️ Transcription vide — abandon");
+    return;
+  }
+
+  try {
+    console.log("🤖 Analyse par Claude...");
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: `Tu es un assistant qui analyse des messages de boîte vocale.
+Retourne UNIQUEMENT un JSON valide (sans backticks) :
 {
   "transcript": "transcription complète",
   "caller_name": "nom ou null",
   "summary": "résumé en 2-3 phrases",
   "actions": ["action 1"],
   "urgency": "haute | normale | faible",
-  "callback_requested": true,
+  "callback_requested": true ou false,
   "callback_number": "numéro ou null"
 }`,
-    messages: [{
-      role: "user",
-      content: [
-        { type: "document", source: { type: "base64", media_type: "audio/mpeg", data: audioBase64 } },
-        { type: "text", text: "Analyse ce message vocal." }
-      ]
-    }]
-  });
+      messages: [{
+        role: "user",
+        content: `Analyse ce message vocal transcrit automatiquement :\n\n"${TranscriptionText}"\n\nAppelant : ${From}`
+      }]
+    });
 
-  const rawText = response.content.map((b) => b.text || "").join("");
-  const clean = rawText.replace(/```json|```/g, "").trim();
-  const analysis = JSON.parse(clean);
-  console.log("✅ Analyse terminée:", analysis.summary);
-  await sendSummaryEmail({ analysis, From, CallDuration, RecordingSid, RecordingUrl });
-}
+    const rawText = response.content.map((b) => b.text || "").join("");
+    const clean = rawText.replace(/```json|```/g, "").trim();
+    const analysis = JSON.parse(clean);
+    console.log("✅ Analyse terminée:", analysis.summary);
 
-async function sendSummaryEmail({ analysis, From, CallDuration, RecordingSid, RecordingUrl }) {
+    await sendSummaryEmail({ analysis, From, RecordingSid, RecordingUrl, transcript: TranscriptionText });
+  } catch (err) {
+    console.error("❌ Erreur:", err.message);
+  }
+});
+
+async function sendSummaryEmail({ analysis, From, RecordingSid, RecordingUrl, transcript }) {
   const now = new Date().toLocaleString("fr-CA", { timeZone: "America/Toronto" });
   const urgencyEmoji = { haute: "🔴", normale: "🟡", faible: "🟢" }[analysis.urgency] || "🟡";
   const actionsHtml = analysis.actions?.length
@@ -91,8 +98,6 @@ async function sendSummaryEmail({ analysis, From, CallDuration, RecordingSid, Re
 <div style="padding:24px 32px;border-bottom:1px solid #eee;">
 <div style="font-size:11px;color:#999;text-transform:uppercase;">De</div>
 <div style="font-size:15px;font-weight:600;color:#222;margin-top:3px;">${analysis.caller_name || From}</div>
-<div style="font-size:11px;color:#999;text-transform:uppercase;margin-top:12px;">Durée</div>
-<div style="font-size:15px;font-weight:600;color:#222;margin-top:3px;">${CallDuration}s</div>
 <div style="font-size:11px;color:#999;text-transform:uppercase;margin-top:12px;">Urgence</div>
 <div style="font-size:15px;font-weight:600;color:#222;margin-top:3px;">${urgencyEmoji} ${analysis.urgency}</div>
 </div>
@@ -107,7 +112,7 @@ async function sendSummaryEmail({ analysis, From, CallDuration, RecordingSid, Re
 ${analysis.callback_requested ? `<div style="padding:20px 32px;background:#f0edff;border-bottom:1px solid #eee;"><span style="font-size:13px;color:#7c6af7;font-weight:600;">📲 Rappel demandé${analysis.callback_number ? ` au ${analysis.callback_number}` : ""}</span></div>` : ""}
 <div style="padding:24px 32px;border-bottom:1px solid #eee;">
 <div style="font-size:11px;color:#999;text-transform:uppercase;margin-bottom:10px;">Transcription</div>
-<p style="margin:0;font-size:13px;color:#666;line-height:1.8;font-style:italic;">"${analysis.transcript}"</p>
+<p style="margin:0;font-size:13px;color:#666;line-height:1.8;font-style:italic;">"${transcript}"</p>
 </div>
 <div style="padding:20px 32px;text-align:center;">
 <a href="${RecordingUrl}" style="display:inline-block;padding:10px 24px;background:#7c6af7;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">🎧 Écouter le message</a>
