@@ -98,6 +98,6 @@ Retourne UNIQUEMENT un JSON valide (sans backticks) :
 async function sendSummaryEmail({ analysis, From, RecordingSid, RecordingUrl, transcript }) {
   const now = new Date().toLocaleString("fr-CA", { timeZone: "America/Toronto" });
   const urgencyEmoji = { haute: "🔴", normale: "🟡", faible: "🟢" }[analysis.urgency] || "🟡";
-  const actionsHtml = analysis.actions?.length
-    ? analysis.actions.map((a) => `<li style="margin:6px 0;">${a}</li>`).join("")
-    : "<li>Aucune ac
+  const actionsHtml = analysis.actions && analysis.actions.length > 0
+    ? analysis.actions.map(function(a) { return '<li style="margin:6px 0;">' + a + '</li>'; }).join('')
+    : '<li>Aucune action requise</li>';
